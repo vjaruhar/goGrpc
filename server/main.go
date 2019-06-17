@@ -22,7 +22,7 @@ type server struct {
 }
 
 //TODO: Handle errors on client and server side
-var resp []pb.UserProfile
+var resp []*pb.UserProfile
 
 const (
 	port       = ":50051"
@@ -41,6 +41,7 @@ func (s *server) CreateUserProfile(ctx context.Context, req *pb.CreateUserProfil
 	db, err := sql.Open("postgres", dbinfo)
 	if err != nil {
 		log.Print(err)
+		return &pb.UserProfile{}, err
 	}
 	sqlStatement := `INSERT INTO public."user"(
 		id, email, first_name, last_name, birth_date, telephones)
@@ -50,6 +51,7 @@ func (s *server) CreateUserProfile(ctx context.Context, req *pb.CreateUserProfil
 
 	if err != nil {
 		log.Print(err)
+		return &pb.UserProfile{}, err
 	}
 
 	defer db.Close()
@@ -61,7 +63,6 @@ func (s *server) CreateUserProfile(ctx context.Context, req *pb.CreateUserProfil
 }
 
 func (s *server) UpdateUserProfile(ctx context.Context, req *pb.UpdateUserProfileRequest) (*pb.UserProfile, error) {
-
 	dbinfo := fmt.Sprintf("user=%s password=%s dbname=%s sslmode=disable",
 		DbUser, DbPassword, DbName)
 	db, err := sql.Open("postgres", dbinfo)
@@ -93,6 +94,7 @@ func (s *server) UpdateUserProfile(ctx context.Context, req *pb.UpdateUserProfil
 }
 
 func (s *server) GetUserProfile(ctx context.Context, req *pb.GetUserProfileRequest) (*pb.UserProfile, error) {
+
 	kid := req.Id
 
 	uid, _ := uuid.FromString(kid)
@@ -117,10 +119,10 @@ func (s *server) GetUserProfile(ctx context.Context, req *pb.GetUserProfileReque
 
 	defer rows.Close()
 	for rows.Next() {
-		err := rows.Scan(&id, &email, &first_name, &last_name, &birth_date, &telephones)
+		err := rows.Scan(&id, &email, &first_name, &last_name, &birth_date, pq.Array(&telephones))
 		if err != nil {
 			log.Printf("scan mein error %v", err)
-			return &pb.UserProfile{}, nil
+			return &pb.UserProfile{}, err
 		}
 	}
 
@@ -136,9 +138,39 @@ func (s *server) GetUserProfile(ctx context.Context, req *pb.GetUserProfileReque
 }
 
 func (s *server) ListUsersProfiles(ctx context.Context, req *pb.ListUsersProfilesRequest) (*pb.ListUsersProfilesResponse, error) {
-	//q := req.GetQuery()
+	q := req.GetQuery()
 
-	return &pb.ListUsersProfilesResponse{}, nil
+	dbinfo := fmt.Sprintf("user=%s password=%s dbname=%s sslmode=disable",
+		DbUser, DbPassword, DbName)
+	db, err := sql.Open("postgres", dbinfo)
+	if err != nil {
+		panic(err)
+	}
+
+	rows, err := db.Query(`SELECT * FROM public."user" WHERE first_name LIKE $1`, fmt.Sprintf("%%%s%%", q))
+	if err != nil {
+		log.Printf("ErrorGet %v", err)
+	} else {
+		var id string
+		var email string
+		var first_name string
+		var last_name string
+		var birth_date string
+		var telephones []string
+		for rows.Next() {
+			err := rows.Scan(&id, &email, &first_name, &last_name, &birth_date, pq.Array(&telephones))
+			if err != nil {
+				log.Printf("scan mein error %v", err)
+				return &pb.ListUsersProfilesResponse{}, err
+			} else {
+				resp = append(resp, &pb.UserProfile{Id: id, Email: email, FirstName: first_name, LastName: last_name, Telephones: telephones})
+			}
+		}
+	}
+
+	return &pb.ListUsersProfilesResponse{
+		Profiles: resp,
+	}, nil
 }
 
 func main() {
