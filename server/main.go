@@ -27,7 +27,7 @@ var resp []pb.UserProfile
 const (
 	port       = ":50051"
 	DbUser     = "postgres"
-	DbPassword = "vineet"
+	DbPassword = ""
 	DbName     = "user"
 )
 
